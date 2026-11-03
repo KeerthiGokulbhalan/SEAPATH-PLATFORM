@@ -76,7 +76,7 @@ def init_db():
             con.executemany("INSERT INTO vessels VALUES(?,?,?,?,?,?,?,?)", seeds)
 
 app = FastAPI(title="SeaPath API", version="1.0.0", description="Academic maritime routing and voyage simulation API. Environmental and vessel movement values are simulated.")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=False, allow_methods=["*"], allow_headers=["*"])
 
 @app.on_event("startup")
 def startup():
@@ -171,7 +171,6 @@ def astar(start, goal, strategy):
     s=snap(s); g=snap(g)
     def heuristic(n):
         return haversine(coord(n),coord(g))
-    weights={"fastest":0.12,"efficient":0.65,"safest":3.4}
     pq=[(heuristic(s),0.0,s)]
     came={}; costs={s:0.0}; visited=set()
     dirs=[(-1,-1),(-1,0),(-1,1),(0,-1),(0,1),(1,-1),(1,0),(1,1)]
@@ -186,8 +185,15 @@ def astar(start, goal, strategy):
             if not (0<=nxt[0]<rows and 0<=nxt[1]<cols) or nxt in visited or not ocean(nxt): continue
             nla,nlo=coord(nxt); nm=haversine((la,lo),(nla,nlo))
             risk,_,_=weather_risk((la+nla)/2,(lo+nlo)/2)
-            # Time/fuel prefer shorter, calmer legs; safety strongly penalises adverse conditions.
-            edge=nm*(1+weights[strategy]*risk)
+            # Costs mirror the downstream metric model: time = distance / effective speed;
+            # fuel = time x fuel rate x a modest sea-state penalty. Safety adds a
+            # stronger risk penalty while still accounting for distance.
+            if strategy=="fastest":
+                edge=nm/(1-.12*risk)
+            elif strategy=="efficient":
+                edge=nm*(1+.08*risk)/(1-.12*risk)
+            else:
+                edge=nm*(1+3.4*risk)
             new=cost+edge
             if new<costs.get(nxt,float("inf")):
                 costs[nxt]=new; came[nxt]=node
