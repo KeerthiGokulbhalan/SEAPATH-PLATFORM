@@ -310,7 +310,7 @@ def route_alerts(route,progress=0):
     for i,(a,b) in enumerate(zip(route,route[1:])):
         mid=((a[0]+b[0])/2,(a[1]+b[1])/2); risk,wave,wind=weather_risk(*mid)
         if risk>.62:
-            alerts.append({"id":f"wx-{i}","severity":"HIGH" if risk>.78 else "MODERATE","segment":f"{mid[0]:.2f}°N, {mid[1]:.2f}°E","reason":f"Simulated sea state {wave:.1f} m and wind {wind:.0f} km/h","risk":round(risk,2),"approaching":i/max(1,len(route)-1)>=progress})
+            alerts.append({"id":f"wx-{i}","severity":"HIGH" if risk>.78 else "MODERATE","segment":f"{mid[0]:.2f}°N, {mid[1]:.2f}°E","reason":f"Simulated sea state {wave:.1f} m and wind {wind:.0f} km/h","risk":round(risk,2),"approaching":(i/max(1,len(route)-1)>=progress and i/max(1,len(route)-1)-progress<0.12)})
     return alerts
 
 @app.get("/api/voyages")
@@ -325,16 +325,45 @@ def get_voyage(voyage_id: str): return voyage(voyage_id)
 def tick_voyage(voyage_id: str, minutes: float = 10):
     current=voyage(voyage_id)
     if current["status"]!="IN_PROGRESS": return current
-    # Demo time is accelerated; speed and distance still determine progress.
     elapsed=minutes/60
     vessel=get_vessel(current["vessel_id"])
+    alerts=route_alerts(current["route"],current["progress"])
+    # One deterministic automatic diversion is triggered when a severe segment is near.
+    if current["reroutes"]==0 and any(a["severity"]=="HIGH" and a["approaching"] for a in alerts):
+        old_route=current["route"]
+        lengths=[haversine(a,b) for a,b in zip(old_route,old_route[1:])]
+        target=current["progress"]*sum(lengths)
+        prefix=[old_route[0]]; covered=0.0
+        for a,b,d in zip(old_route,old_route[1:],lengths):
+            if covered+d<target:
+                prefix.append(b); covered+=d
+            else:
+                t=0.0 if d==0 else (target-covered)/d
+                here=[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t]
+                if haversine(prefix[-1],here)>.01: prefix.append(here)
+                break
+        destination=get_port(current["destination_id"])
+        safe_start=(current["position"][0],current["position"][1])
+        safe_end=nearest_ocean(destination["lat"],destination["lon"])
+        safe_route=astar(safe_start,safe_end,"safest")
+        safe_route[0]=list(safe_start); safe_route[-1]=[destination["lat"],destination["lon"]]
+        remaining=route_metrics(safe_route,vessel,vessel["max_speed"])
+        combined=prefix+safe_route[1:]
+        total_distance=current["actual_distance_nm"]+remaining["distance_nm"]
+        new_progress=min(1.0,current["actual_distance_nm"]/max(total_distance,.001))
+        new_fuel_plan=current["actual_fuel_tons"]+remaining["fuel_tons"]
+        new_duration=current["elapsed_hr"]+remaining["duration_hr"]
+        now=datetime.now(timezone.utc).isoformat()
+        with connect() as con:
+            con.execute("""UPDATE voyages SET route_json=?,distance_nm=?,duration_hr=?,fuel_tons=?,co2_tons=?,risk=?,progress=?,hindrances=hindrances+1,reroutes=reroutes+1,updated_at=? WHERE id=?""",
+            (json.dumps(combined),total_distance,new_duration,new_fuel_plan,new_fuel_plan*CO2_FACTOR,remaining["risk"],new_progress,now,voyage_id))
+        return voyage(voyage_id)
     effective_speed=max(4,vessel["max_speed"]*(1-.12*current["risk"]))
     moved=min(current["distance_nm"]*(1-current["progress"]),effective_speed*elapsed)
     actual_elapsed=moved/effective_speed if effective_speed else 0
     new_distance=current["actual_distance_nm"]+moved
     new_progress=min(1,new_distance/current["distance_nm"])
     new_fuel=current["actual_fuel_tons"]+actual_elapsed*vessel["fuel_rate"]
-    alerts=route_alerts(current["route"],current["progress"])
     new_hindrances=current["hindrances"]+(1 if any(a["approaching"] for a in alerts) and current["hindrances"]==0 else 0)
     status="ARRIVED" if new_progress>=1 else "IN_PROGRESS"
     now=datetime.now(timezone.utc).isoformat()
