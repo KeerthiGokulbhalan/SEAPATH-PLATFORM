@@ -2,3 +2,5 @@ fastapi==0.115.12
 uvicorn[standard]==0.34.0
 pydantic==2.10.6
 global-land-mask==1.0.0
+pytest==8.3.5
+httpx==0.28.1
