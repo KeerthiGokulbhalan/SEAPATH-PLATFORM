@@ -191,7 +191,7 @@ def astar(start, goal, strategy):
             if strategy=="fastest":
                 edge=nm/(1-.12*risk)
             elif strategy=="efficient":
-                edge=nm*(1+.08*risk)/(1-.12*risk)
+                edge=nm*(1+.25*risk)/(1-.12*risk)
             else:
                 edge=nm*(1+3.4*risk)
             new=cost+edge
@@ -373,7 +373,7 @@ def tick_voyage(voyage_id: str, minutes: float = 10):
     actual_elapsed=moved/effective_speed if effective_speed else 0
     new_distance=current["actual_distance_nm"]+moved
     new_progress=min(1,new_distance/current["distance_nm"])
-    new_fuel=current["actual_fuel_tons"]+actual_elapsed*vessel["fuel_rate"]
+    new_fuel=current["actual_fuel_tons"]+actual_elapsed*vessel["fuel_rate"]*(1+.25*current["risk"])
     new_hindrances=current["hindrances"]+(1 if any(a["approaching"] for a in alerts) and current["hindrances"]==0 else 0)
     status="ARRIVED" if new_progress>=1 else "IN_PROGRESS"
     now=datetime.now(timezone.utc).isoformat()
