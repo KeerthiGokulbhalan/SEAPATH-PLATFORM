@@ -71,6 +71,3 @@ The GitHub Actions workflow runs backend tests and a frontend production build o
 - The supplied port dataset focuses on Indian ports. Add verified port coordinates before expanding to other regions.
 - OpenStreetMap basemap tiles and Google Fonts require an internet connection in the browser.
 - For deployment, restrict CORS, configure HTTPS and authentication, use a managed database, and replace demo environmental inputs with validated operational data.
-
-
-CI validation branch: automated backend and frontend checks are being run against this revision before merge.
