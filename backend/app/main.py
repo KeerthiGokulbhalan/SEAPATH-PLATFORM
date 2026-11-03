@@ -115,7 +115,7 @@ def weather_risk(lat, lon):
     # Stable, coordinate-derived scenario: repeatable across refreshes and API calls.
     wave = 1.1 + 1.7 * (0.5 + 0.5 * math.sin(lat*0.31 + lon*0.17)) + 0.7 * (0.5 + 0.5 * math.cos(lon*0.21-lat*0.13))
     wind = 9.0 + 17.0 * (0.5 + 0.5 * math.sin(lat*0.19-lon*0.11))
-    return min(1.0, max(0.0, (wave-1.5)/5.5 * 0.55 + (wind-10)/35 * 0.45)), wave, wind
+    return min(1.0, max(0.0, (wave-1.3)/2.8 * 0.6 + (wind-9)/17 * 0.4)), wave, wind
 
 def nearest_ocean(lat, lon):
     if globe is None:
