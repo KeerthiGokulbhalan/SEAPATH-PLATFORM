@@ -1,10 +1,11 @@
 import pytest
 from fastapi.testclient import TestClient
-from app.main import app
+from app import main as app_module
 
 @pytest.fixture(scope="module")
-def client():
-    with TestClient(app) as test_client:
+def client(tmp_path_factory):
+    app_module.DB_PATH = tmp_path_factory.mktemp("seapath-test") / "test.sqlite3"
+    with TestClient(app_module.app) as test_client:
         yield test_client
 
 def test_health_marks_simulated_data(client):
