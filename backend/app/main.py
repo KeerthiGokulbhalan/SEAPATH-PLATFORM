@@ -258,9 +258,6 @@ def delete_vessel(vessel_id: str):
 def plan_routes(payload: PlanIn):
     vessel=get_vessel(payload.vessel_id); origin=get_port(payload.origin_id); dest=get_port(payload.destination_id)
     if origin["id"]==dest["id"]: raise HTTPException(422,"Choose two different ports.")
-    with connect() as con:
-        active=con.execute("SELECT 1 FROM voyages WHERE vessel_id=? AND status='IN_PROGRESS'",(vessel["id"],)).fetchone()
-    if active: raise HTTPException(409,"This vessel already has an active voyage. Select another vessel or finish its current voyage.")
     speed=min(payload.departure_speed or vessel["max_speed"],vessel["max_speed"])
     start=nearest_ocean(origin["lat"],origin["lon"]); end=nearest_ocean(dest["lat"],dest["lon"])
     options=[]
@@ -275,6 +272,9 @@ def plan_routes(payload: PlanIn):
 def start_voyage(payload: StartIn):
     vessel=get_vessel(payload.vessel_id); origin=get_port(payload.origin_id); dest=get_port(payload.destination_id)
     if origin["id"]==dest["id"]: raise HTTPException(422,"Choose two different ports.")
+    with connect() as con:
+        active=con.execute("SELECT 1 FROM voyages WHERE vessel_id=? AND status='IN_PROGRESS'",(vessel["id"],)).fetchone()
+    if active: raise HTTPException(409,"This vessel already has an active voyage. Select another vessel or finish its current voyage.")
     speed=vessel["max_speed"]
     start=nearest_ocean(origin["lat"],origin["lon"]); end=nearest_ocean(dest["lat"],dest["lon"])
     route=astar(start,end,payload.strategy)
