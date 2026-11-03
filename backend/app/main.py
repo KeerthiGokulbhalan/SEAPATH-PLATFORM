@@ -101,12 +101,6 @@ class StartIn(BaseModel):
     origin_id: str
     destination_id: str
     strategy: Literal["fastest","efficient","safest"]
-    route: list[list[float]]
-    distance_nm: float
-    duration_hr: float
-    fuel_tons: float
-    co2_tons: float
-    risk: float
 
 def rowdict(row):
     return dict(row) if row else None
@@ -145,8 +139,8 @@ def astar(start, goal, strategy):
     if globe is None:
         raise HTTPException(503, "Ocean routing dependency is unavailable. Install backend/requirements.txt.")
     step=0.25
-    min_lat=min(start[0],goal[0])-7; max_lat=max(start[0],goal[0])+7
-    min_lon=min(start[1],goal[1])-7; max_lon=max(start[1],goal[1])+7
+    min_lat=min(start[0],goal[0])-10; max_lat=max(start[0],goal[0])+10
+    min_lon=min(start[1],goal[1])-10; max_lon=max(start[1],goal[1])+10
     # Keep the grid bounded for predictable response time.
     rows=int((max_lat-min_lat)/step)+1; cols=int((max_lon-min_lon)/step)+1
     if rows*cols>90000:
@@ -162,9 +156,19 @@ def astar(start, goal, strategy):
             la,lo=coord(node)
             ocean_cache[node]=bool(globe.is_ocean(la,lo))
         return ocean_cache[node]
-    # Port endpoints are snapped offshore, so both endpoints must be ocean.
-    if not ocean(s) or not ocean(g):
+    def snap(node):
+        if ocean(node): return node
+        candidates=[]
+        for radius in range(1,13):
+            for dr in range(-radius,radius+1):
+                for dc in range(-radius,radius+1):
+                    if max(abs(dr),abs(dc))!=radius: continue
+                    candidate=(node[0]+dr,node[1]+dc)
+                    if 0<=candidate[0]<rows and 0<=candidate[1]<cols and ocean(candidate):
+                        candidates.append((haversine(coord(node),coord(candidate)),candidate))
+            if candidates: return min(candidates,key=lambda x:x[0])[1]
         raise HTTPException(422,"A route endpoint could not be snapped to open water.")
+    s=snap(s); g=snap(g)
     def heuristic(n):
         return haversine(coord(n),coord(g))
     weights={"fastest":0.12,"efficient":0.65,"safest":3.4}
@@ -267,12 +271,17 @@ def plan_routes(payload: PlanIn):
 @app.post("/api/voyages",status_code=201)
 def start_voyage(payload: StartIn):
     vessel=get_vessel(payload.vessel_id); origin=get_port(payload.origin_id); dest=get_port(payload.destination_id)
-    if len(payload.route)<2: raise HTTPException(422,"A route must contain at least two points.")
+    if origin["id"]==dest["id"]: raise HTTPException(422,"Choose two different ports.")
+    speed=vessel["max_speed"]
+    start=nearest_ocean(origin["lat"],origin["lon"]); end=nearest_ocean(dest["lat"],dest["lon"])
+    route=astar(start,end,payload.strategy)
+    route[0]=[origin["lat"],origin["lon"]]; route[-1]=[dest["lat"],dest["lon"]]
+    metrics=route_metrics(route,vessel,speed)
     voyage_id="voy-"+uuid.uuid4().hex[:12]; now=datetime.now(timezone.utc).isoformat()
     with connect() as con:
         con.execute("""INSERT INTO voyages(id,vessel_id,vessel_name,origin_id,origin_name,destination_id,destination_name,strategy,route_json,distance_nm,duration_hr,fuel_tons,co2_tons,risk,progress,status,elapsed_hr,actual_distance_nm,actual_fuel_tons,hindrances,reroutes,created_at,updated_at)
         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,'IN_PROGRESS',0,0,0,0,0,?,?)""",
-        (voyage_id,vessel["id"],vessel["name"],origin["id"],origin["name"],dest["id"],dest["name"],payload.strategy,json.dumps(payload.route),payload.distance_nm,payload.duration_hr,payload.fuel_tons,payload.co2_tons,payload.risk,now,now))
+        (voyage_id,vessel["id"],vessel["name"],origin["id"],origin["name"],dest["id"],dest["name"],payload.strategy,json.dumps(route),metrics["distance_nm"],metrics["duration_hr"],metrics["fuel_tons"],metrics["co2_tons"],metrics["risk"],now,now))
     return voyage(voyage_id)
 
 def voyage(voyage_id):
@@ -281,7 +290,8 @@ def voyage(voyage_id):
     item=dict(r); route=json.loads(item.pop("route_json")); item["route"]=route
     item["position"]=position_on_route(route,item["progress"])
     item["remaining_nm"]=round(item["distance_nm"]*(1-item["progress"]),1)
-    item["eta_hr"]=round(item["remaining_nm"]/max(4,get_vessel(item["vessel_id"])["max_speed"]),1)
+    effective_speed=max(4,get_vessel(item["vessel_id"])["max_speed"]*(1-.12*item["risk"]))
+    item["eta_hr"]=round(item["remaining_nm"]/effective_speed,1)
     item["alerts"]=route_alerts(route,item["progress"])
     return item
 
@@ -318,17 +328,19 @@ def tick_voyage(voyage_id: str, minutes: float = 10):
     # Demo time is accelerated; speed and distance still determine progress.
     elapsed=minutes/60
     vessel=get_vessel(current["vessel_id"])
-    moved=min(current["distance_nm"]*(1-current["progress"]),vessel["max_speed"]*elapsed)
+    effective_speed=max(4,vessel["max_speed"]*(1-.12*current["risk"]))
+    moved=min(current["distance_nm"]*(1-current["progress"]),effective_speed*elapsed)
+    actual_elapsed=moved/effective_speed if effective_speed else 0
     new_distance=current["actual_distance_nm"]+moved
     new_progress=min(1,new_distance/current["distance_nm"])
-    new_fuel=current["actual_fuel_tons"]+(moved/max(vessel["max_speed"],1))*vessel["fuel_rate"]
+    new_fuel=current["actual_fuel_tons"]+actual_elapsed*vessel["fuel_rate"]
     alerts=route_alerts(current["route"],current["progress"])
     new_hindrances=current["hindrances"]+(1 if any(a["approaching"] for a in alerts) and current["hindrances"]==0 else 0)
     status="ARRIVED" if new_progress>=1 else "IN_PROGRESS"
     now=datetime.now(timezone.utc).isoformat()
     with connect() as con:
         con.execute("UPDATE voyages SET progress=?,elapsed_hr=elapsed_hr+?,actual_distance_nm=?,actual_fuel_tons=?,hindrances=?,status=?,updated_at=? WHERE id=?",
-        (new_progress,elapsed,new_distance,new_fuel,new_hindrances,status,now,voyage_id))
+        (new_progress,actual_elapsed,new_distance,new_fuel,new_hindrances,status,now,voyage_id))
     return voyage(voyage_id)
 
 @app.get("/api/analytics")
