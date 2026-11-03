@@ -17,8 +17,10 @@ from pydantic import BaseModel, Field
 
 try:
     from global_land_mask import globe
-except Exception:
+    LAND_MASK_IMPORT_ERROR = None
+except Exception as exc:
     globe = None
+    LAND_MASK_IMPORT_ERROR = f"{type(exc).__name__}: {exc}"
 
 APP_DIR = Path(__file__).resolve().parent
 DB_PATH = Path(os.getenv("SEAPATH_DB", APP_DIR.parent / "seapath.sqlite3"))
@@ -119,7 +121,7 @@ def weather_risk(lat, lon):
 
 def nearest_ocean(lat, lon):
     if globe is None:
-        raise HTTPException(503, "Ocean routing dependency is unavailable. Install backend/requirements.txt.")
+        raise HTTPException(503, f"Ocean routing dependency is unavailable: {LAND_MASK_IMPORT_ERROR or 'unknown import error'}. Reinstall backend/requirements.txt.")
     if bool(globe.is_ocean(lat, lon)):
         return (lat, lon)
     # Harbours are land-side coordinates. Move to the nearest ocean grid point.
@@ -137,7 +139,7 @@ def nearest_ocean(lat, lon):
 
 def astar(start, goal, strategy):
     if globe is None:
-        raise HTTPException(503, "Ocean routing dependency is unavailable. Install backend/requirements.txt.")
+        raise HTTPException(503, f"Ocean routing dependency is unavailable: {LAND_MASK_IMPORT_ERROR or 'unknown import error'}. Reinstall backend/requirements.txt.")
     step=0.25
     min_lat=min(start[0],goal[0])-10; max_lat=max(start[0],goal[0])+10
     min_lon=min(start[1],goal[1])-10; max_lon=max(start[1],goal[1])+10
