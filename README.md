@@ -42,8 +42,9 @@ Open http://localhost:5173. Vite proxies `/api` requests to the backend on port 
 2. **Plan Voyage:** choose a vessel and Indian source/destination ports; calculate three route options with distance, time, fuel, CO₂, risk and adverse-weather exposure.
 3. **Current Voyage:** start a strategy selected by the operator, view only that voyage's route and current simulated position, and advance the demo simulation.
 4. **Fleet tracking:** overview map can show independently stored active voyage positions.
-5. **Weather alerts:** deterministic simulated weather-risk segments are attached to the selected route and surfaced in the current-voyage panel.
-6. **Analytics:** overall totals and a per-voyage ledger are derived from stored simulation records.
+5. **Weather alerts and rerouting:** deterministic simulated risk segments are attached to the selected route. A high-severity segment approaching the vessel can trigger one automatic safest-route diversion.
+6. **Voyage lifecycle:** active voyages can be interrupted; arrived and interrupted voyages stop advancing.
+7. **Analytics:** overall totals and a per-voyage planned-versus-simulated report are derived from the correct stored voyage record.
 
 ## API
 
@@ -51,7 +52,7 @@ Open http://localhost:5173. Vite proxies `/api` requests to the backend on port 
 - `GET/POST /api/vessels`, `DELETE /api/vessels/{id}`
 - `POST /api/routes/plan`
 - `GET /api/voyages`, `POST /api/voyages`, `GET /api/voyages/{id}`
-- `POST /api/voyages/{id}/tick?minutes=10`
+- `POST /api/voyages/{id}/tick?minutes=10`, `POST /api/voyages/{id}/interrupt`
 - `GET /api/analytics`, `GET /api/voyages/{id}/analytics`
 
 ## Validation
