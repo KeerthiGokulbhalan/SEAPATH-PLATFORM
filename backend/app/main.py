@@ -258,6 +258,9 @@ def delete_vessel(vessel_id: str):
 def plan_routes(payload: PlanIn):
     vessel=get_vessel(payload.vessel_id); origin=get_port(payload.origin_id); dest=get_port(payload.destination_id)
     if origin["id"]==dest["id"]: raise HTTPException(422,"Choose two different ports.")
+    with connect() as con:
+        active=con.execute("SELECT 1 FROM voyages WHERE vessel_id=? AND status='IN_PROGRESS'",(vessel["id"],)).fetchone()
+    if active: raise HTTPException(409,"This vessel already has an active voyage. Select another vessel or finish its current voyage.")
     speed=min(payload.departure_speed or vessel["max_speed"],vessel["max_speed"])
     start=nearest_ocean(origin["lat"],origin["lon"]); end=nearest_ocean(dest["lat"],dest["lon"])
     options=[]
@@ -289,6 +292,7 @@ def voyage(voyage_id):
     if not r: raise HTTPException(404,"Voyage not found")
     item=dict(r); route=json.loads(item.pop("route_json")); item["route"]=route
     item["position"]=position_on_route(route,item["progress"])
+    item["current_speed_kn"]=round(get_vessel(item["vessel_id"])["max_speed"]*(1-.12*item["risk"]),1) if item["status"]=="IN_PROGRESS" else 0.0
     item["remaining_nm"]=round(item["distance_nm"]*(1-item["progress"]),1)
     effective_speed=max(4,get_vessel(item["vessel_id"])["max_speed"]*(1-.12*item["risk"]))
     item["eta_hr"]=round(item["remaining_nm"]/effective_speed,1)
@@ -310,7 +314,7 @@ def route_alerts(route,progress=0):
     for i,(a,b) in enumerate(zip(route,route[1:])):
         mid=((a[0]+b[0])/2,(a[1]+b[1])/2); risk,wave,wind=weather_risk(*mid)
         if risk>.62:
-            alerts.append({"id":f"wx-{i}","severity":"HIGH" if risk>.78 else "MODERATE","segment":f"{mid[0]:.2f}°N, {mid[1]:.2f}°E","reason":f"Simulated sea state {wave:.1f} m and wind {wind:.0f} km/h","risk":round(risk,2),"approaching":(i/max(1,len(route)-1)>=progress and i/max(1,len(route)-1)-progress<0.12)})
+            alerts.append({"id":f"wx-{i}","severity":"HIGH" if risk>.78 else "MODERATE","segment":f"{mid[0]:.2f}°N, {mid[1]:.2f}°E","reason":f"Simulated sea state {wave:.1f} m and wind {wind:.0f} km/h","risk":round(risk,2),"start":[a[0],a[1]],"end":[b[0],b[1]],"approaching":(i/max(1,len(route)-1)>=progress and i/max(1,len(route)-1)-progress<0.12)})
     return alerts
 
 @app.get("/api/voyages")
