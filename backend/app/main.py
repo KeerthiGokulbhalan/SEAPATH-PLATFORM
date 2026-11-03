@@ -183,6 +183,8 @@ def astar(start, goal, strategy):
         for dr,dc in dirs:
             nxt=(node[0]+dr,node[1]+dc)
             if not (0<=nxt[0]<rows and 0<=nxt[1]<cols) or nxt in visited or not ocean(nxt): continue
+            # Prevent diagonal corner-cutting across a land cell.
+            if dr and dc and (not ocean((node[0]+dr,node[1])) or not ocean((node[0],node[1]+dc))): continue
             nla,nlo=coord(nxt); nm=haversine((la,lo),(nla,nlo))
             risk,_,_=weather_risk((la+nla)/2,(lo+nlo)/2)
             # Costs mirror the downstream metric model: time = distance / effective speed;
