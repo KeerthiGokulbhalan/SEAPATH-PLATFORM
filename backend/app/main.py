@@ -382,6 +382,15 @@ def tick_voyage(voyage_id: str, minutes: float = 10):
         (new_progress,actual_elapsed,new_distance,new_fuel,new_hindrances,status,now,voyage_id))
     return voyage(voyage_id)
 
+@app.post("/api/voyages/{voyage_id}/interrupt")
+def interrupt_voyage(voyage_id: str):
+    current=voyage(voyage_id)
+    if current["status"]=="IN_PROGRESS":
+        now=datetime.now(timezone.utc).isoformat()
+        with connect() as con:
+            con.execute("UPDATE voyages SET status='INTERRUPTED',updated_at=? WHERE id=?",(now,voyage_id))
+    return voyage(voyage_id)
+
 @app.get("/api/analytics")
 def analytics():
     with connect() as con: rows=[dict(r) for r in con.execute("SELECT * FROM voyages")]
