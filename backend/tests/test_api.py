@@ -72,3 +72,12 @@ def test_analytics_totals_are_consistent(client):
     assert data["total_voyages"] == data["completed"] + data["active"] + data["interrupted"]
     assert data["distance_nm"] >= 0
     assert data["fuel_tons"] >= 0
+
+def test_simulated_weather_is_repeatable_and_bounded():
+    from app.main import weather_risk
+    first = weather_risk(14.5, 78.2)
+    second = weather_risk(14.5, 78.2)
+    assert first == second
+    assert 0 <= first[0] <= 1
+    assert first[1] > 0
+    assert first[2] > 0
