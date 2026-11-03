@@ -302,7 +302,7 @@ def voyage(voyage_id):
     item["position"]=position_on_route(route,item["progress"])
     item["current_speed_kn"]=round(get_vessel(item["vessel_id"])["max_speed"]*(1-.12*item["risk"]),1) if item["status"]=="IN_PROGRESS" else 0.0
     item["remaining_nm"]=round(item["distance_nm"]*(1-item["progress"]),1)
-    effective_speed=max(4,get_vessel(item["vessel_id"])["max_speed"]*(1-.12*item["risk"]))
+    effective_speed=max(1.0,get_vessel(item["vessel_id"])["max_speed"]*(1-.12*item["risk"]))
     item["eta_hr"]=round(item["remaining_nm"]/effective_speed,1)
     item["alerts"]=route_alerts(route,item["progress"])
     return item
@@ -370,7 +370,7 @@ def tick_voyage(voyage_id: str, minutes: float = 10):
             con.execute("""UPDATE voyages SET route_json=?,distance_nm=?,duration_hr=?,fuel_tons=?,co2_tons=?,risk=?,progress=?,hindrances=hindrances+1,reroutes=reroutes+1,updated_at=? WHERE id=?""",
             (json.dumps(combined),total_distance,new_duration,new_fuel_plan,new_fuel_plan*CO2_FACTOR,remaining["risk"],new_progress,now,voyage_id))
         return voyage(voyage_id)
-    effective_speed=max(4,vessel["max_speed"]*(1-.12*current["risk"]))
+    effective_speed=max(1.0,vessel["max_speed"]*(1-.12*current["risk"]))
     moved=min(current["distance_nm"]*(1-current["progress"]),effective_speed*elapsed)
     actual_elapsed=moved/effective_speed if effective_speed else 0
     new_distance=current["actual_distance_nm"]+moved
